@@ -215,6 +215,14 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+.DS_Store
+
 .idea
 
 ai_docs
+
+inputs
+
+output
+
+logs
