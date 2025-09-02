@@ -307,6 +307,45 @@ class TransactionExporter:
         self._log('info', f"Simple Excel report completed: {output_path}")
         return output_path
 
+    def export_pdf_report(self, df: pd.DataFrame, analysis_results: Dict[str, Any],
+                         chart_paths: List[str], output_path: str) -> str:
+        """
+        Export comprehensive PDF report combining all analysis results and charts
+        
+        Args:
+            df: Main transaction dataframe
+            analysis_results: Analysis results dictionary
+            chart_paths: List of paths to generated charts
+            output_path: Output PDF file path
+            
+        Returns:
+            Path to generated PDF file
+        """
+        try:
+            # Import PDF exporter (lazy import to avoid issues if reportlab not installed)
+            from src.pdf_exporter import TransactionPDFExporter
+            
+            self._log('info', f"Creating PDF report: {output_path}")
+            
+            # Create PDF exporter and generate report
+            pdf_exporter = TransactionPDFExporter(enable_logging=False)
+            result_path = pdf_exporter.export_consolidated_pdf(
+                df=df,
+                analysis_results=analysis_results,
+                chart_paths=chart_paths,
+                output_path=output_path
+            )
+            
+            self._log('info', f"✅ PDF report completed: {result_path}")
+            return result_path
+            
+        except ImportError as e:
+            self._log('error', f"PDF export requires reportlab library: {e}")
+            raise ImportError("PDF export functionality requires 'reportlab' package. Please install it.")
+        except Exception as e:
+            self._log('error', f"Error creating PDF report: {e}")
+            raise
+
 
 def export_simple_excel(df: pd.DataFrame, output_path: str) -> str:
     """Convenience function for simple Excel export"""

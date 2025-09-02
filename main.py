@@ -11,6 +11,7 @@ Features:
 - 🤖 Intelligent auto-categorization  
 - 📈 Charts and visualizations
 - 📑 Multi-sheet Excel reports
+- 📋 Professional PDF reports
 - 🗂️ Per-account analysis
 - 🔍 Advanced filtering options
 
@@ -156,6 +157,7 @@ def verify_cli_alignment():
         '--skip-charts': 'Skip chart generation',
         '--export-categories': 'Export category mappings',
         '--simple-export': 'Create simplified export',
+        '--pdf-export': 'Generate comprehensive PDF report',
         '--verbose': 'Enable verbose logging'
     }
     # This function serves as documentation and validation
@@ -240,6 +242,7 @@ def main():
         skip_charts = get_yes_no("Skip chart generation?")
         export_categories = get_yes_no("Export category mappings for review?")
         simple_export = get_yes_no("Also create simplified Excel export?")
+        pdf_export = get_yes_no("Generate comprehensive PDF report?", 'y')
 
         # Step 3: Output options
         print("\n📁 STEP 3: OUTPUT OPTIONS")
@@ -270,6 +273,8 @@ def main():
             print("   • Category Export: YES")
         if simple_export:
             print("   • Simple Export: YES")
+        if pdf_export:
+            print("   • PDF Report: YES")
         if custom_output:
             print(f"   • Output Folder: {custom_output}")
 
@@ -314,6 +319,9 @@ def main():
 
         if simple_export:
             cmd.append('--simple-export')
+
+        if pdf_export:
+            cmd.append('--pdf-export')
 
         cmd.append('--verbose')  # Always use verbose for main.py
 

@@ -250,6 +250,21 @@ class TransactionAnalysisApp:
 
             exported_files['charts'] = moved_charts
             self.logger.info(f"✓ Moved {len(moved_charts)} charts to {charts_dir}")
+            
+        # Export PDF report if requested
+        if args.pdf_export:
+            pdf_path = f'{output_dir}/{folder_name}_report.pdf'
+            try:
+                # Use the moved charts for PDF (or original if moving failed)
+                pdf_charts = moved_charts if 'charts' in exported_files else chart_paths
+                pdf_file = exporter.export_pdf_report(df, analysis_results, pdf_charts, pdf_path)
+                exported_files['pdf'] = pdf_file
+                self.logger.info(f"✅ PDF report: {pdf_file}")
+            except ImportError as e:
+                self.logger.error(f"PDF export failed: {e}")
+                self.logger.error("Please install reportlab: pip install reportlab")
+            except Exception as e:
+                self.logger.error(f"PDF export failed: {e}")
 
         return exported_files
 
@@ -444,6 +459,10 @@ def main():
     parser.add_argument('--simple-export',
                         action='store_true',
                         help='Also create simplified Excel export')
+    
+    parser.add_argument('--pdf-export',
+                        action='store_true',
+                        help='Generate consolidated PDF report with charts')
 
     parser.add_argument('--separate-accounts',
                         action='store_true',
