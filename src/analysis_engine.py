@@ -29,12 +29,16 @@ class TransactionAnalyzer:
     """Scalable analyzer for transaction data of any business type"""
 
     def __init__(self, enable_logging: bool = True):
+        # Initialize logger for analysis progress tracking and debugging
         self.logger = self._setup_logging() if enable_logging else None
+        # Storage for analysis results across different analysis runs
         self.analysis_results = {}
+        # Performance metrics for large dataset processing optimization
         self.performance_metrics = {}
 
     def _setup_logging(self) -> logging.Logger:
-        """Setup logging configuration"""
+        """Setup logging configuration for analysis progress tracking"""
+        # Configure logging for detailed analysis progress and error reporting
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s'
@@ -42,13 +46,15 @@ class TransactionAnalyzer:
         return logging.getLogger(__name__)
 
     def _log(self, level: str, message: str) -> None:
-        """Safe logging method"""
+        """Safe logging method that handles cases where logging is disabled"""
         if self.logger:
+            # Dynamically call the appropriate logging level method
             getattr(self.logger, level.lower())(message)
 
     def _apply_date_filter(self, df: pd.DataFrame, start_date: Optional[str] = None,
                            end_date: Optional[str] = None) -> pd.DataFrame:
-        """Apply date filtering to dataframe"""
+        """Apply date filtering to focus analysis on specific time periods"""
+        # PREREQUISITE CHECK: Ensure date column exists for filtering
         if 'transaction_date' not in df.columns:
             self._log('warning', "No date column found for filtering")
             return df
@@ -56,19 +62,23 @@ class TransactionAnalyzer:
         original_count = len(df)
         filtered_df = df.copy()
 
+        # START DATE FILTERING: Include transactions from specified start date onwards
         if start_date:
             start_date_parsed = pd.to_datetime(start_date)
             filtered_df = filtered_df[filtered_df['transaction_date'] >= start_date_parsed]
             self._log('info', f"Applied start date filter: {start_date}")
 
+        # END DATE FILTERING: Include transactions up to specified end date
         if end_date:
             end_date_parsed = pd.to_datetime(end_date)
             filtered_df = filtered_df[filtered_df['transaction_date'] <= end_date_parsed]
             self._log('info', f"Applied end date filter: {end_date}")
 
+        # FILTERING IMPACT REPORTING: Show how much data was retained after filtering
         filtered_count = len(filtered_df)
+        retention_rate = ((filtered_count / original_count) * 100) if original_count > 0 else 0
         self._log('info', f"Date filtering: {original_count:,} -> {filtered_count:,} rows "
-                          f"({((filtered_count / original_count) * 100):.1f}% retained)")
+                          f"({retention_rate:.1f}% retained)")
 
         return filtered_df
 

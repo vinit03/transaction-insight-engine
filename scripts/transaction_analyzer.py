@@ -53,36 +53,42 @@ class TransactionAnalysisApp:
     """Main application class for transaction analysis"""
 
     def __init__(self):
+        # Initialize logging first to enable error reporting throughout the application
         self.setup_logging()
         self.logger = logging.getLogger(__name__)
 
     def setup_logging(self):
-        """Setup application logging"""
-        # Create logs directory
+        """Setup application logging with both file and console output"""
+        # Create logs directory to store persistent analysis logs
         os.makedirs('logs', exist_ok=True)
 
-        # Configure logging
+        # Configure dual-output logging: file for detailed logs, console for user feedback
+        # File logs persist for troubleshooting, console logs provide real-time progress
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             handlers=[
+                # Daily log file with timestamp for historical analysis tracking
                 logging.FileHandler(f'logs/transaction_analysis_{datetime.now().strftime("%Y%m%d")}.log'),
+                # Console output for immediate user feedback during analysis
                 logging.StreamHandler(sys.stdout)
             ]
         )
 
     def validate_inputs(self, args):
-        """Validate command line arguments"""
-        # Check input files exist
+        """Validate command line arguments to prevent runtime errors"""
+        # FILE VALIDATION: Ensure all input files exist and are in supported formats
         for file_path in args.input:
+            # Check file existence to prevent FileNotFoundError during processing
             if not Path(file_path).exists():
                 raise FileNotFoundError(f"Input file not found: {file_path}")
 
-            # Check file extension
+            # Validate file format to ensure compatibility with data loader
+            # Supported formats: Excel (.xlsx, .xls) and CSV files
             if Path(file_path).suffix.lower() not in ['.xlsx', '.xls', '.csv']:
                 raise ValueError(f"Unsupported file format: {file_path}")
 
-        # Validate date formats
+        # DATE FORMAT VALIDATION: Ensure dates are in ISO format for consistent parsing
         if args.start_date:
             try:
                 datetime.strptime(args.start_date, '%Y-%m-%d')
@@ -95,7 +101,7 @@ class TransactionAnalysisApp:
             except ValueError:
                 raise ValueError("End date must be in format YYYY-MM-DD")
 
-        # Check date logic
+        # DATE LOGIC VALIDATION: Ensure start date comes before end date
         if args.start_date and args.end_date:
             start = datetime.strptime(args.start_date, '%Y-%m-%d')
             end = datetime.strptime(args.end_date, '%Y-%m-%d')
@@ -103,51 +109,61 @@ class TransactionAnalysisApp:
                 raise ValueError("Start date must be before end date")
 
     def load_data(self, args) -> pd.DataFrame:
-        """Load transaction data from input files"""
+        """Load and prepare transaction data from input files"""
         self.logger.info(f"Loading data from {len(args.input)} file(s)")
 
-        # Initialize data loader
+        # Initialize data loader with logging enabled for detailed processing feedback
         loader = DataLoader(enable_logging=True)
 
-        # Load single or multiple files
+        # LOADING STRATEGY: Handle single vs. multiple files with different approaches
         if len(args.input) == 1:
+            # Single file: Direct loading with optimized memory usage
             df = loader.load_file(args.input[0])
         else:
+            # Multiple files: Require explicit merge flag to prevent accidental data combination
             if not args.merge:
                 raise ValueError("Multiple files provided but --merge not specified")
+            # Merge files with consistent column mapping and data type handling
             df = loader.load_multiple_files(args.input)
 
         self.logger.info(f"Successfully loaded {len(df):,} transactions")
 
-        # Filter by accounts if specified
+        # ACCOUNT FILTERING: Apply account-specific filtering if requested
+        # This reduces memory usage and focuses analysis on specific accounts
         if args.accounts and 'account_number' in df.columns:
             original_count = len(df)
+            # Convert account numbers to integers for consistent filtering
             account_filter = [int(acc) for acc in args.accounts]
             df = df[df['account_number'].isin(account_filter)]
+            # Log filtering impact for user awareness of data reduction
             self.logger.info(f"Account filtering: {original_count:,} -> {len(df):,} transactions")
 
         return df
 
     def run_categorization(self, df: pd.DataFrame, args) -> pd.DataFrame:
-        """Run transaction categorization"""
+        """Apply intelligent transaction categorization using pattern recognition"""
+        # PERFORMANCE OPTIMIZATION: Allow skipping for faster processing when categories aren't needed
         if args.skip_categorization:
             self.logger.info("Skipping categorization as requested")
             return df
 
         self.logger.info("Starting transaction categorization")
 
-        # Initialize categorizer
+        # Initialize categorizer with machine learning pattern recognition
+        # This learns from transaction descriptions and amounts to create meaningful categories
         categorizer = TransactionCategorizer(enable_logging=True)
 
-        # Run categorization
+        # CATEGORIZATION ENGINE: Apply intelligent categorization to all transactions
+        # Uses similarity matching, amount patterns, and merchant grouping
         df_categorized = categorizer.categorize_transactions(df)
 
-        # Export category mappings for review if requested
+        # CATEGORY EXPORT: Export category mappings for manual review and refinement
+        # This allows users to understand and adjust the automatic categorization
         if args.export_categories:
             categories_file = 'output/category_mappings_for_review.xlsx'
             os.makedirs(os.path.dirname(categories_file), exist_ok=True)
 
-            # Get category summary
+            # Extract category summary with counts and examples for user review
             category_summary = categorizer.get_category_summary()
             if not category_summary.empty:
                 with pd.ExcelWriter(categories_file, engine='openpyxl') as writer:
@@ -157,38 +173,50 @@ class TransactionAnalysisApp:
         return df_categorized
 
     def run_analysis(self, df: pd.DataFrame, args) -> Dict[str, Any]:
-        """Run comprehensive analysis"""
+        """Execute comprehensive financial and statistical analysis"""
         self.logger.info("Starting comprehensive analysis")
 
-        # Initialize analyzer
+        # Initialize analyzer with high-precision decimal calculations
+        # Handles large datasets (1M+ records) with optimized memory usage
         analyzer = TransactionAnalyzer(enable_logging=True)
 
-        # Run analysis with date filtering
+        # COMPREHENSIVE ANALYSIS: Multi-dimensional analysis including:
+        # - Basic statistics (totals, averages, distributions)
+        # - Account analysis (per-account metrics and activity)
+        # - Temporal patterns (monthly/weekly trends)
+        # - Category analysis (spending patterns by category)
+        # - Financial ratios and position analysis
         analysis_results = analyzer.comprehensive_analysis(
             df,
-            start_date=args.start_date,
-            end_date=args.end_date
+            start_date=args.start_date,  # Apply date filtering for focused analysis
+            end_date=args.end_date       # Both dates optional for full dataset analysis
         )
 
         return analysis_results
 
     def create_visualizations(self, df: pd.DataFrame, analysis_results: Dict[str, Any], args, output_dir: str,
                               context_label: str = None) -> List[str]:
-        """Create visualizations"""
+        """Generate comprehensive visualization dashboard for analysis results"""
+        # PERFORMANCE OPTION: Allow skipping charts for faster processing
         if args.skip_charts:
             self.logger.info("Skipping chart generation as requested")
             return []
 
         self.logger.info("Creating visualizations")
 
-        # Create charts directory
+        # CHART ORGANIZATION: Create dedicated charts subdirectory for clean file structure
         charts_dir = f'{output_dir}/charts'
         os.makedirs(charts_dir, exist_ok=True)
 
-        # Initialize visualizer with custom output directory and context label
+        # Initialize visualizer with context-aware labeling for multi-account scenarios
+        # Context label helps distinguish between combined vs. per-account charts
         visualizer = TransactionVisualizer(enable_logging=True, output_dir=charts_dir, context_label=context_label)
 
-        # Create charts
+        # DASHBOARD CREATION: Generate comprehensive chart suite including:
+        # - Transaction volume and amount trends over time
+        # - Category distribution and spending patterns
+        # - Account balance movements and cash flow
+        # - Statistical distributions and outlier analysis
         chart_paths = visualizer.create_comprehensive_dashboard(df, analysis_results)
 
         return chart_paths

@@ -27,13 +27,18 @@ class DataLoader:
     """High-performance data loader with adaptive column mapping"""
 
     def __init__(self, enable_logging: bool = True):
+        # Initialize logger for detailed loading progress and error reporting
         self.logger = self._setup_logging() if enable_logging else None
+        # Store dynamic column mapping discovered during file analysis
         self.column_map = {}
+        # Track file metadata and processing statistics
         self.data_info = {}
+        # Monitor memory usage for large file processing optimization
         self.memory_usage_mb = 0
 
     def _setup_logging(self) -> logging.Logger:
-        """Setup logging configuration"""
+        """Setup logging configuration for data loading operations"""
+        # Configure detailed logging for file processing, column detection, and performance metrics
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s'
@@ -41,176 +46,239 @@ class DataLoader:
         return logging.getLogger(__name__)
 
     def _log(self, level: str, message: str) -> None:
-        """Safe logging method"""
+        """Safe logging method that handles disabled logging gracefully"""
         if self.logger:
+            # Dynamically call the appropriate logging level method
             getattr(self.logger, level.lower())(message)
 
     def _get_memory_usage(self) -> float:
-        """Get current memory usage in MB"""
+        """Get current memory usage in MB for performance monitoring"""
+        # Monitor process memory usage to optimize large file loading strategies
         process = psutil.Process(os.getpid())
         return process.memory_info().rss / 1024 / 1024
 
     def _detect_columns(self, df_sample: pd.DataFrame) -> Dict[str, str]:
         """
-        Detect and map columns based on configuration
+        ADAPTIVE COLUMN DETECTION: Intelligently map file columns to standard names
+        
+        This system handles diverse input file formats by mapping various possible
+        column names to standardized internal names, enabling universal processing.
+        
         Returns mapping of standard_name -> actual_column_name
         """
         column_map = {}
         available_columns = df_sample.columns.tolist()
 
+        # INTELLIGENT MAPPING: Try multiple possible names for each standard column
+        # This handles variations in naming conventions across different data sources
         for standard_name, possible_names in COLUMN_MAPPINGS.items():
             found_column = None
 
-            # Find first matching column name
+            # PRIORITY MATCHING: Find first matching column name (ordered by preference)
+            # Configuration defines preferred column names first in each list
             for possible_name in possible_names:
                 if possible_name in available_columns:
                     found_column = possible_name
                     break
 
             if found_column:
+                # SUCCESSFUL MAPPING: Record the mapping for data processing
                 column_map[standard_name] = found_column
                 self._log('debug', f"Mapped '{standard_name}' -> '{found_column}'")
             else:
+                # MAPPING FAILURE: Log missing columns for user awareness
                 self._log('warning', f"Column '{standard_name}' not found. Tried: {possible_names}")
 
         return column_map
 
     def _validate_required_columns(self, column_map: Dict[str, str]) -> bool:
-        """Validate that all required columns are present"""
+        """Validate that all required columns are present for analysis"""
         missing_columns = []
 
+        # REQUIREMENT VALIDATION: Ensure all essential columns are mappable
+        # These columns are fundamental for transaction analysis functionality
         for required_col in REQUIRED_COLUMNS:
             if required_col not in column_map:
                 missing_columns.append(required_col)
 
         if missing_columns:
+            # VALIDATION FAILURE: Report missing essential columns
             self._log('error', f"Missing required columns: {missing_columns}")
+            self._log('error', "Analysis cannot proceed without these essential columns")
             return False
 
+        # VALIDATION SUCCESS: All required columns found
         self._log('info', f"All required columns found: {REQUIRED_COLUMNS}")
         return True
 
     def _optimize_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Optimize data types for memory efficiency"""
+        """MEMORY OPTIMIZATION: Reduce memory usage through intelligent data type selection"""
+        # CONFIGURATION CHECK: Allow disabling optimization if needed
         if not PERFORMANCE_SETTINGS.get('dtype_optimization', True):
             return df
 
         start_memory = df.memory_usage(deep=True).sum() / 1024 ** 2
 
-        # Optimize numeric columns
+        # NUMERIC OPTIMIZATION: Reduce precision where possible without data loss
         for col in df.select_dtypes(include=['int64', 'float64']).columns:
+            # Skip columns that are entirely null
             if df[col].isnull().all():
                 continue
 
             col_min = df[col].min()
             col_max = df[col].max()
 
-            # Optimize integers
+            # INTEGER OPTIMIZATION: Use smallest integer type that can hold the data
             if df[col].dtype == 'int64':
+                # Check if values fit in smaller integer types
                 if col_min >= -128 and col_max <= 127:
-                    df[col] = df[col].astype('int8')
+                    df[col] = df[col].astype('int8')    # 1 byte vs 8 bytes
                 elif col_min >= -32768 and col_max <= 32767:
-                    df[col] = df[col].astype('int16')
+                    df[col] = df[col].astype('int16')   # 2 bytes vs 8 bytes
                 elif col_min >= -2147483648 and col_max <= 2147483647:
-                    df[col] = df[col].astype('int32')
+                    df[col] = df[col].astype('int32')   # 4 bytes vs 8 bytes
 
-            # Optimize floats
+            # FLOAT OPTIMIZATION: Use float32 instead of float64 when precision allows
             elif df[col].dtype == 'float64':
-                df[col] = df[col].astype('float32')
+                # float32 provides sufficient precision for most financial data
+                df[col] = df[col].astype('float32')     # 4 bytes vs 8 bytes
 
-        # Convert strings to categories if beneficial
+        # CATEGORICAL OPTIMIZATION: Convert repetitive strings to categories
+        # Categories are memory-efficient for columns with low cardinality
         if PERFORMANCE_SETTINGS.get('use_categorical', True):
             for col in df.select_dtypes(include=['object']).columns:
-                if df[col].nunique() / len(df) < 0.5:  # Less than 50% unique values
+                # Only categorize if less than 50% unique values (high repetition)
+                unique_ratio = df[col].nunique() / len(df)
+                if unique_ratio < 0.5:
                     df[col] = df[col].astype('category')
 
+        # OPTIMIZATION REPORTING: Show memory savings achieved
         end_memory = df.memory_usage(deep=True).sum() / 1024 ** 2
+        memory_saved = start_memory - end_memory
+        savings_percent = (memory_saved / start_memory) * 100 if start_memory > 0 else 0
         self._log('info', f"Memory optimization: {start_memory:.2f}MB -> {end_memory:.2f}MB "
-                          f"(saved {start_memory - end_memory:.2f}MB)")
+                          f"(saved {memory_saved:.2f}MB, {savings_percent:.1f}%)")
 
         return df
 
     def _process_dates(self, df: pd.DataFrame, date_column: str) -> pd.DataFrame:
-        """Process and validate date column"""
+        """DATE PROCESSING: Convert and validate date columns with comprehensive error handling"""
         if date_column not in df.columns:
             self._log('warning', f"Date column '{date_column}' not found")
             return df
 
         try:
-            # Try to convert to datetime
+            # INTELLIGENT DATE PARSING: Handle various date formats automatically
+            # pandas.to_datetime can parse many formats: YYYY-MM-DD, MM/DD/YYYY, DD-MM-YYYY, etc.
+            original_valid_count = df[date_column].notna().sum()
             df[date_column] = pd.to_datetime(df[date_column], errors='coerce')
 
-            # Check for invalid dates
+            # VALIDATION: Check for parsing failures
             invalid_dates = df[date_column].isnull().sum()
-            if invalid_dates > 0:
-                self._log('warning', f"Found {invalid_dates} invalid dates")
+            parsing_failures = invalid_dates - (len(df) - original_valid_count)
+            if parsing_failures > 0:
+                self._log('warning', f"Found {parsing_failures} dates that couldn't be parsed")
 
-            # Validate date range
-            min_date = df[date_column].min()
-            max_date = df[date_column].max()
-            self._log('info', f"Date range: {min_date} to {max_date}")
+            # DATE RANGE VALIDATION: Establish the temporal scope of the data
+            if df[date_column].notna().any():
+                min_date = df[date_column].min()
+                max_date = df[date_column].max()
+                date_span_days = (max_date - min_date).days
+                self._log('info', f"Date range: {min_date.date()} to {max_date.date()} ({date_span_days} days)")
 
-            # Check for future dates (potential data issue)
-            future_dates = df[df[date_column] > datetime.now()].shape[0]
-            if future_dates > 0:
-                self._log('warning', f"Found {future_dates} future dates - possible data issue")
+                # FUTURE DATE DETECTION: Identify potential data entry errors
+                current_date = datetime.now()
+                future_dates = df[df[date_column] > current_date].shape[0]
+                if future_dates > 0:
+                    self._log('warning', f"Found {future_dates} future dates - possible data issue")
+
+                # ANCIENT DATE DETECTION: Identify unrealistic historical dates
+                min_reasonable_date = datetime(1900, 1, 1)
+                ancient_dates = df[df[date_column] < min_reasonable_date].shape[0]
+                if ancient_dates > 0:
+                    self._log('warning', f"Found {ancient_dates} dates before 1900 - possible data issue")
 
         except Exception as e:
             self._log('error', f"Error processing dates: {e}")
+            self._log('error', "Date processing failed - some time-based analysis may be affected")
 
         return df
 
     def _clean_and_standardize(self, df: pd.DataFrame, column_map: Dict[str, str]) -> pd.DataFrame:
-        """Clean and standardize the data"""
+        """DATA CLEANING AND STANDARDIZATION: Transform raw data into analysis-ready format"""
 
-        # Rename columns to standard names
+        # COLUMN STANDARDIZATION: Rename columns to consistent internal names
         reverse_map = {v: k for k, v in column_map.items()}
         df = df.rename(columns=reverse_map)
+        self._log('debug', f"Standardized column names: {list(reverse_map.keys())} -> {list(reverse_map.values())}")
 
-        # Process dates
+        # DATE STANDARDIZATION: Ensure consistent date format for temporal analysis
         if 'transaction_date' in df.columns:
             df = self._process_dates(df, 'transaction_date')
 
-        # Clean amount column and convert to Decimal
+        # FINANCIAL PRECISION: Convert monetary amounts to high-precision Decimal type
+        # This prevents floating-point precision errors in financial calculations
         if 'amount' in df.columns:
-            # First ensure numeric for conversion
+            # NUMERIC CONVERSION: Handle various string formats and ensure numeric data
+            original_count = df['amount'].notna().sum()
             df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
+            conversion_failures = original_count - df['amount'].notna().sum()
+            if conversion_failures > 0:
+                self._log('warning', f"Failed to convert {conversion_failures} amount values to numeric")
 
-            # Convert to Decimal for precise financial calculations
+            # DECIMAL CONVERSION: Use Decimal for precise financial calculations
             if DECIMAL_SETTINGS.get('use_decimal', True):
                 df['amount'] = decimal_series(df['amount'])
                 self._log('info', "Converted amount column to Decimal for precise calculations")
 
-            # Check for null amounts
+            # MISSING AMOUNT DETECTION: Identify transactions without amounts
             null_amounts = df['amount'].isnull().sum()
             if null_amounts > 0:
-                self._log('warning', f"Found {null_amounts} null amounts - will be excluded from analysis")
+                null_percentage = (null_amounts / len(df)) * 100
+                self._log('warning', f"Found {null_amounts} null amounts ({null_percentage:.1f}%) - will be excluded from financial analysis")
 
-        # Clean balance column and convert to Decimal
+        # BALANCE PRECISION: Apply same precision handling to balance column
         if 'balance' in df.columns:
-            # First ensure numeric for conversion
+            original_count = df['balance'].notna().sum()
             df['balance'] = pd.to_numeric(df['balance'], errors='coerce')
+            conversion_failures = original_count - df['balance'].notna().sum()
+            if conversion_failures > 0:
+                self._log('warning', f"Failed to convert {conversion_failures} balance values to numeric")
 
-            # Convert to Decimal for precise financial calculations
+            # DECIMAL CONVERSION: Use Decimal for precise balance calculations
             if DECIMAL_SETTINGS.get('use_decimal', True):
                 df['balance'] = decimal_series(df['balance'])
                 self._log('info', "Converted balance column to Decimal for precise calculations")
 
-        # Clean description columns
+        # TEXT CLEANING: Standardize description columns for better categorization
         for desc_col in ['main_description', 'additional_description']:
             if desc_col in df.columns:
+                # Convert to string and remove leading/trailing whitespace
                 df[desc_col] = df[desc_col].astype(str).str.strip()
-                # Replace 'nan' strings with actual NaN
+                # Handle pandas string representation of NaN
                 df[desc_col] = df[desc_col].replace('nan', np.nan)
+                # Remove empty strings and convert to NaN for consistency
+                df[desc_col] = df[desc_col].replace('', np.nan)
+                cleaned_count = df[desc_col].notna().sum()
+                self._log('debug', f"Cleaned {desc_col}: {cleaned_count} valid descriptions")
 
-        # Fill missing values with defaults
+        # DEFAULT VALUE IMPUTATION: Fill missing values with sensible defaults
         for col, default_value in DEFAULT_VALUES.items():
             if col in df.columns:
+                filled_count = df[col].isnull().sum()
                 df[col] = df[col].fillna(default_value)
+                if filled_count > 0:
+                    self._log('debug', f"Filled {filled_count} missing {col} values with '{default_value}'")
 
-        # Sort by date and account for better performance
+        # PERFORMANCE OPTIMIZATION: Sort data for efficient querying and analysis
+        # Sorting by account and date enables optimized account-specific analysis
         if 'transaction_date' in df.columns and 'account_number' in df.columns:
+            original_order = df.index.tolist()
             df = df.sort_values(['account_number', 'transaction_date']).reset_index(drop=True)
+            self._log('debug', "Sorted data by account and date for optimal analysis performance")
+        elif 'transaction_date' in df.columns:
+            df = df.sort_values(['transaction_date']).reset_index(drop=True)
+            self._log('debug', "Sorted data by date")
 
         return df
 
