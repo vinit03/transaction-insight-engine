@@ -357,10 +357,18 @@ class TransactionPDFExporter:
                 
                 for account in accounts[:10]:  # Limit to top 10 accounts
                     account_num = str(account.get('account_number', 'N/A'))
-                    status = 'Active' if account.get('is_active', False) else 'Inactive'
-                    transactions = account.get('total_transactions', 0)
-                    net_pos = account.get('net_position', 0)
-                    avg_txn = account.get('avg_transaction', 0)
+                    
+                    # Get activity status from nested structure
+                    activity_status = account.get('activity_status', {})
+                    status = 'Active' if activity_status.get('is_active', False) else 'Inactive'
+                    
+                    # Get transaction count (correct key name)
+                    transactions = account.get('transaction_count', 0)
+                    
+                    # Get financial data from nested structure
+                    financial_summary = account.get('financial_summary', {})
+                    net_pos = financial_summary.get('net_position', 0)
+                    avg_txn = financial_summary.get('avg_transaction', 0)
                     
                     table_data.append([
                         account_num,

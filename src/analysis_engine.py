@@ -8,6 +8,7 @@ import os
 import sys
 import warnings
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Dict, Any, Optional
 
 import numpy as np
@@ -155,38 +156,55 @@ class TransactionAnalyzer:
                 }
             }
 
-            # Financial metrics per account
+            # Financial metrics per account with proper decimal handling
             if 'amount' in account_data.columns:
                 amounts = account_data['amount'].dropna()
+                
+                # Calculate with decimal precision and format properly
+                total_credits = amounts[amounts > 0].sum() if (amounts > 0).any() else Decimal('0')
+                total_debits = amounts[amounts < 0].sum() if (amounts < 0).any() else Decimal('0')
+                net_position = amounts.sum() if len(amounts) > 0 else Decimal('0')
+                avg_transaction = amounts.mean() if len(amounts) > 0 else Decimal('0')
+                
+                # Get current balance with proper decimal handling
+                current_balance = None
+                if 'balance' in account_data.columns and len(account_data) > 0:
+                    balance_value = account_data['balance'].iloc[-1]
+                    current_balance = float(Decimal(str(balance_value)).quantize(Decimal('0.01')))
+                
                 account_detail['financial_summary'] = {
-                    'total_credits': amounts[amounts > 0].sum() if (amounts > 0).any() else 0,
-                    'total_debits': amounts[amounts < 0].sum() if (amounts < 0).any() else 0,
-                    'net_position': amounts.sum(),
-                    'avg_transaction': amounts.mean() if len(amounts) > 0 else 0,
-                    'current_balance': account_data['balance'].iloc[-1] if 'balance' in account_data.columns and len(
-                        account_data) > 0 else None
+                    'total_credits': float(Decimal(str(total_credits)).quantize(Decimal('0.01'))),
+                    'total_debits': float(Decimal(str(total_debits)).quantize(Decimal('0.01'))),
+                    'net_position': float(Decimal(str(net_position)).quantize(Decimal('0.01'))),
+                    'avg_transaction': float(Decimal(str(avg_transaction)).quantize(Decimal('0.01'))),
+                    'current_balance': current_balance
                 }
 
             # Activity status with smart date reference
-            if 'transaction_date' in account_data.columns:
+            if 'transaction_date' in df.columns:
                 # Use smart reference date logic (same as active_inactive_accounts_analysis)
                 data_end = account_data['transaction_date'].max()
                 current_date = datetime.now()
                 days_since_data_end = (current_date - data_end).days
 
-                # Use data end as reference if data is historical (> 30 days old)
+                # Use data end as reference if data is historical (> 30 days old) - for transaction counts only
                 reference_date = data_end if days_since_data_end > 30 else current_date
 
-                days_since_last = (reference_date - account_data['transaction_date'].max()).days
+                # Days since last transaction should ALWAYS be from current date, not reference date
+                days_since_last = days_since_data_end
+                
+                # Calculate transactions in last 30 days from reference date
+                last_30_days_cutoff = reference_date - timedelta(days=30)
+                transactions_last_30_days = len(account_data[
+                    account_data['transaction_date'] > last_30_days_cutoff
+                ])
+                
                 account_detail['activity_status'] = {
                     'days_since_last_transaction': days_since_last,
                     'is_active': days_since_last <= ANALYSIS_SETTINGS.get('active_account_days', 90),
                     'reference_date_used': 'data_end' if days_since_data_end > 30 else 'current_date',
                     'is_historical_data': days_since_data_end > 30,
-                    'transactions_last_30_days': len(account_data[
-                                                         account_data['transaction_date'] > (
-                                                                 reference_date - timedelta(days=30))
-                                                         ]) if 'transaction_date' in account_data.columns else 0
+                    'transactions_last_30_days': transactions_last_30_days
                 }
 
             account_details.append(account_detail)
@@ -210,6 +228,8 @@ class TransactionAnalyzer:
             expense_data = df[df['amount'] < 0].copy()
             if not expense_data.empty:
                 expense_by_merchant = expense_data.groupby('main_description')['amount'].sum().abs()
+                # Convert to float for nlargest to work properly with Decimal types
+                expense_by_merchant = expense_by_merchant.astype(float)
                 top_expense_merchants = expense_by_merchant.nlargest(ANALYSIS_SETTINGS.get('top_merchants_count', 15))
                 merchant_amounts['top_expense_merchants'] = top_expense_merchants.to_dict()
 
@@ -217,6 +237,8 @@ class TransactionAnalyzer:
             revenue_data = df[df['amount'] > 0].copy()
             if not revenue_data.empty:
                 revenue_by_merchant = revenue_data.groupby('main_description')['amount'].sum()
+                # Convert to float for nlargest to work properly with Decimal types
+                revenue_by_merchant = revenue_by_merchant.astype(float)
                 top_revenue_merchants = revenue_by_merchant.nlargest(ANALYSIS_SETTINGS.get('top_merchants_count', 15))
                 merchant_amounts['top_revenue_merchants'] = top_revenue_merchants.to_dict()
 
@@ -328,31 +350,38 @@ class TransactionAnalyzer:
             return {'error': 'No amount column found'}
 
         amounts = df['amount'].dropna().abs()  # Use absolute values for outlier detection
+        # Convert to float for numpy operations to work with Decimal types
+        amounts_float = amounts.astype(float)
 
         # Statistical outlier detection
-        q75, q25 = np.percentile(amounts, [75, 25])
+        q75, q25 = np.percentile(amounts_float, [75, 25])
         iqr = q75 - q25
         lower_bound = q25 - (1.5 * iqr)
         upper_bound = q75 + (1.5 * iqr)
 
         # Percentile-based thresholds
-        percentile_threshold = np.percentile(amounts, ANALYSIS_SETTINGS.get('large_transaction_percentile', 95))
+        percentile_threshold = np.percentile(amounts_float, ANALYSIS_SETTINGS.get('large_transaction_percentile', 95))
 
+        # Compare using float values but store original thresholds
+        df_abs_amounts = df['amount'].abs().astype(float)
         outlier_stats = {
             'statistical_outliers': {
-                'count': len(df[df['amount'].abs() > upper_bound]),
-                'threshold': upper_bound,
-                'percentage': (len(df[df['amount'].abs() > upper_bound]) / len(df)) * 100
+                'count': len(df[df_abs_amounts > upper_bound]),
+                'threshold': float(upper_bound),
+                'percentage': (len(df[df_abs_amounts > upper_bound]) / len(df)) * 100
             },
             'large_transactions': {
-                'count': len(df[df['amount'].abs() > percentile_threshold]),
-                'threshold': percentile_threshold,
-                'percentage': (len(df[df['amount'].abs() > percentile_threshold]) / len(df)) * 100
+                'count': len(df[df_abs_amounts > percentile_threshold]),
+                'threshold': float(percentile_threshold),
+                'percentage': (len(df[df_abs_amounts > percentile_threshold]) / len(df)) * 100
             }
         }
 
         # Find actual outlier transactions (top 10 by absolute amount)
-        outlier_transactions = df.nlargest(10, df['amount'].abs().name if 'amount' in df.columns else 'amount')
+        # Create a copy with float abs_amount column for sorting
+        df_with_abs = df.copy()
+        df_with_abs['abs_amount_float'] = df['amount'].abs().astype(float)
+        outlier_transactions = df_with_abs.nlargest(10, 'abs_amount_float')
 
         if not outlier_transactions.empty:
             outlier_list = []
