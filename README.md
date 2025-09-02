@@ -10,7 +10,7 @@ thousands to 1 million+ records with intelligent categorization and comprehensiv
 - **Intelligent Categorization**: Automatically learns transaction patterns and creates categories
 - **Flexible Column Mapping**: Easily extensible for new file formats
 - **Comprehensive Analysis**: 15+ different analytical reports and visualizations
-- **Export Formats**: Excel (multi-sheet)
+- **Export Formats**: Excel (multi-sheet), PDF reports
 - **Date Range Filtering**: Filter analysis by specific date ranges
 - **Multi-Account Support**: Handles multiple accounts in single or multiple files
 - **Batch Processing**: Process multiple files simultaneously
@@ -20,42 +20,46 @@ thousands to 1 million+ records with intelligent categorization and comprehensiv
 ```
 funding_alt/                     # 🏢 Transaction Analysis Tool
 ├── requirements.txt             # 📋 Production dependencies
+├── requirements-dev.txt         # 📋 Development/docs dependencies
+├── build_docs.sh                # 🔨 Documentation build script
 ├── main.py                      # 🎯 Interactive guided interface
 ├── README.md                    # 📖 Main documentation
 ├── 
 ├── 📁 docs/                     # 📚 Documentation directory
 │   ├── INSTALLATION.md          # 🔧 Setup and installation guide
-│   ├── PROJECT_SUMMARY.md       # 📊 Project summary and achievements
-│   └── EXCEL_EXPORT_DOCUMENTATION.md  # 📊 Detailed Excel export guide
+│   ├── PROJECT_SUMMARY.md       # 📊 Project summary
+│   ├── EXCEL_EXPORT_DOCS.md     # 📊 Excel export guide
+│   └── Tool_Documentation.pdf   # 📄 PDF Documentation
 ├── 
-├── 📁 inputs/                   # 📁 Sample input files for testing
-│   └── 01_sample_statement.xlsx # 📑 Sample transaction data for testing
+├── 📁 inputs/                   # 📁 Sample input files
+│   └── 01_sample_statement.xlsx # 📑 Sample transaction data
 ├── 
 ├── 📁 scripts/                  # 🔧 Command-line executables
 │   ├── __init__.py
-│   └── transaction_analyzer.py  # 💻 Main CLI application
+│   ├── transaction_analyzer.py  # 💻 Main CLI application
+│   └── readme_to_pdf.py         # 📄 README to PDF converter
 ├── 
-├── 📁 src/                      # 🧠 Core business logic
+├── 📁 src/                      # 💡 Core business logic
 │   ├── __init__.py              # 📚 Package exports
-│   ├── data_loader.py           # ⚡ High-performance data loading (with Decimal precision)
+│   ├── data_loader.py           # ⚡ High-performance data loading
 │   ├── categorizer.py           # 🤖 Intelligent auto-categorization
-│   ├── analysis_engine.py       # 📊 Scalable analysis algorithms (Decimal-based)
-│   ├── visualizer.py            # 📈 Dynamic chart generation with context labels
-│   ├── exporter.py              # 📑 Excel export functionality (Decimal-aware)
-│   └── decimal_utils.py         # 🔢 Decimal precision utilities for financial calculations
+│   ├── analysis_engine.py       # 📊 Scalable analysis algorithms
+│   ├── visualizer.py            # 📈 Dynamic chart generation
+│   ├── exporter.py              # 📑 Excel export functionality
+│   └── decimal_utils.py         # 🔢 Decimal precision utilities
 ├── 
 ├── 📁 config/                   # ⚙️ Configuration management
 │   ├── __init__.py
-│   └── settings.py              # 🔧 All configuration, column mappings, and Decimal settings
+│   └── settings.py              # 🔧 Configuration & mappings
 ├── 
 ├── 📁 output/                   # 📤 Generated reports and charts
-│   └── [timestamp_folders]/     # 📁 Organized output by analysis run
+│   └── [timestamp_folders]/     # 📁 Organized by analysis run
 │       ├── analysis.xlsx        # 📊 Main analysis report
-│       ├── simple.xlsx         # 📈 Simplified report
-│       ├── charts/             # 📊 Generated visualizations
-│       └── account_[num]/      # 🏦 Separate account reports (if requested)
+│       ├── simple.xlsx          # 📈 Simplified report
+│       ├── charts/              # 📊 Generated visualizations
+│       └── account_[num]/       # 🏦 Per-account reports
 ├── 
-├── 📁 logs/                     # 📜 Application logs (auto-created)
+├── 📁 logs/                     # 📜 Application logs
 └── 📁 venv/                     # 🐍 Python virtual environment
 ```
 
@@ -72,8 +76,8 @@ source venv/bin/activate  # On macOS/Linux
 # or
 venv\\Scripts\\activate     # On Windows
 
-# Install required packages
-pip install pandas openpyxl matplotlib seaborn psutil xlsxwriter
+# Install required packages (including PDF support)
+pip install pandas openpyxl matplotlib seaborn psutil xlsxwriter reportlab
 ```
 
 ### 2. Usage Options (Choose Your Preferred Interface)
@@ -232,6 +236,39 @@ The tool automatically generates relevant charts with **context labels** for cla
 📋 **Detailed Excel Documentation**: See [docs/EXCEL_EXPORT_DOCUMENTATION.md](docs/EXCEL_EXPORT_DOCUMENTATION.md) for
 complete details about each sheet's structure, columns, and business use cases.
 
+### PDF Reports
+
+- **Comprehensive PDF Analysis** (`*_report.pdf`) - **New Feature!**:
+    - Professional executive-ready PDF reports combining tables and charts
+    - **Cover page** with report metadata and key highlights
+    - **Executive summary** with critical financial metrics
+    - **Financial overview** with embedded charts and trend analysis
+    - **Account performance** tables with activity status and metrics
+    - **Transaction analysis** with categorization breakdown
+    - **Visual analytics dashboard** with all generated charts embedded
+    - **Data quality assessment** with validation results
+    - Optimized for printing and executive presentation
+    - Charts automatically resized and embedded with proper aspect ratios
+
+**PDF Generation Requirements:**
+```bash
+# PDF functionality requires reportlab
+pip install reportlab
+```
+
+**Enable PDF Export:**
+```bash
+# Generate PDF report along with Excel
+python scripts/transaction_analyzer.py --input data.xlsx --pdf-export
+
+# PDF with custom output name
+python scripts/transaction_analyzer.py --input data.xlsx --pdf-export --output quarterly_report
+
+# Combined Excel and PDF with all features
+python scripts/transaction_analyzer.py --input data.xlsx \\
+    --pdf-export --simple-export --separate-accounts
+```
+
 ### Separate Account Reports
 
 - **Individual account analysis** (when `--separate-accounts` used):
@@ -324,6 +361,7 @@ python scripts/transaction_analyzer.py --input large_dataset.xlsx \\
 | `--skip-charts`         | Skip chart generation                 | `--skip-charts`           |
 | `--export-categories`   | Export category mappings for review   | `--export-categories`     |
 | `--simple-export`       | Also create simplified Excel report   | `--simple-export`         |
+| `--pdf-export`          | Generate comprehensive PDF report     | `--pdf-export`            |
 | `--verbose` `-v`        | Enable detailed logging               | `--verbose`               |
 
 ## 🏗️ Architecture Design
@@ -361,6 +399,7 @@ matplotlib>=3.5.0
 seaborn>=0.11.0
 psutil>=5.8.0
 xlsxwriter>=3.0.0
+reportlab>=4.0.0     # Required for PDF export functionality
 ```
 
 ## ✅ Testing
@@ -401,6 +440,27 @@ Complete documentation is available in the `docs/` directory:
 - **[Project Summary](docs/PROJECT_SUMMARY.md)** - Project overview, achievements, and technical details
 - **[Excel Export Documentation](docs/EXCEL_EXPORT_DOCUMENTATION.md)** - Complete guide to Excel file structure and
   contents
+- **[PDF Documentation](docs/Generic_Transaction_Analysis_Tool_Documentation.pdf)** - Professional PDF version of this README
+
+### 🔨 Building Documentation
+
+To regenerate the PDF documentation from README.md:
+
+```bash
+# Quick build (installs dependencies automatically)
+./build_docs.sh
+
+# Manual build
+pip install -r requirements-dev.txt
+python scripts/readme_to_pdf.py
+```
+
+**Generated PDF Features:**
+- Professional formatting with proper typography
+- Automatic page breaks and section organization
+- Code syntax highlighting and table formatting
+- Page numbers and generation timestamps
+- Print-ready layout optimized for A4 paper
 
 ## 📞 Support
 
